@@ -30,6 +30,15 @@ git clone https://github.com/Kevin9181/manus.git && cd manus && sudo ./deploy.sh
 
 如果要迁移旧版 Monitor 配置，可在部署前将旧 `config.json` 放入 `manus/config/monitor-config.json`，并确保该文件权限为 `0600`；首次登录后脚本会预览并询问是否导入。部署完成后，可在项目目录查看或管理服务：
 
+先克隆并准备私有配置，再执行部署：
+
+```bash
+git clone https://github.com/Kevin9181/manus.git
+mkdir -p manus/config
+install -m 600 /path/to/telegram-monitor/config/config.json manus/config/monitor-config.json
+cd manus && sudo ./deploy.sh
+```
+
 ```bash
 sudo docker compose ps
 sudo docker compose logs -f telegram-forwarder
@@ -73,7 +82,8 @@ sudo docker compose down   # 仅停止服务；不会删除 db、sessions 等主
 迁移前先准备旧项目的 `config.json`，确保 `.env` 中的用户账号已加入所有监听源和目标聊天。将旧配置放进合并项目 `config/` 目录（此目录默认被 Git 忽略，适合放运行配置）：
 
 ```bash
-cp /path/to/telegram-monitor/config/config.json ./config/monitor-config.json
+mkdir -p ./config
+install -m 600 /path/to/telegram-monitor/config/config.json ./config/monitor-config.json
 ```
 
 先试解析，再正式导入：
