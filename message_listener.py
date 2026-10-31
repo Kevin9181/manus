@@ -154,6 +154,10 @@ async def handle_user_message(event, user_client, bot_client):
             if rule.use_bot:
                 # 直接使用过滤器模块中的process_forward_rule函数
                 await process_forward_rule(bot_client, event, str(chat_id), rule)
+            elif getattr(rule, 'is_monitor_compat', False):
+                # Monitor 兼容规则继续使用用户账号收发，但走统一过滤器链，
+                # 这样来源摘要、命中关键词、媒体处理等配置才会实际生效。
+                await process_forward_rule(user_client, event, str(chat_id), rule)
             else:
                 await user_handler.process_forward_rule(user_client, event, str(chat_id), rule)
         
@@ -207,4 +211,3 @@ async def clear_group_cache(group_key, delay=300):  # 5分钟后清除缓存
     """清除已处理的媒体组记录"""
     await asyncio.sleep(delay)
     PROCESSED_GROUPS.discard(group_key) 
-
