@@ -18,6 +18,27 @@
 
 两个项目重复的多源监听、关键词筛选、转发目标管理与 Bot 管理由同一套规则系统实现，不再并行保留两份监听服务。Monitor 的旧配置通过导入器迁移；其 Ubuntu/systemd 与 SSH 安装脚本不是运行时功能，本合并版统一使用 Docker Compose 或直接运行 Python 服务。
 
+## 一键部署（Ubuntu/Debian）
+
+在全新的 Ubuntu/Debian 服务器上，先创建 Telegram API 凭据、Bot Token 和管理员用户 ID，然后以 root 执行下面这一条命令：
+
+```bash
+git clone https://github.com/Kevin9181/manus.git && cd manus && sudo ./deploy.sh
+```
+
+`deploy.sh` 会检查系统和 Docker；缺少 Docker 时先询问是否从 Docker 官方站点安装。随后它会交互式收集必需凭据、以 `0600` 权限写入本机 `.env`、构建镜像，并在首次运行时启动登录向导。按 Telegram 提示输入验证码/二步验证密码；看到客户端启动后按 `Ctrl+C` 返回部署脚本，脚本会验证 user/Bot 会话并启动后台容器。脚本不会把凭据输出到屏幕或提交到 Git。
+
+如果要迁移旧版 Monitor 配置，可在部署前将旧 `config.json` 放入 `manus/config/monitor-config.json`，并确保该文件权限为 `0600`；首次登录后脚本会预览并询问是否导入。部署完成后，可在项目目录查看或管理服务：
+
+```bash
+sudo docker compose ps
+sudo docker compose logs -f telegram-forwarder
+sudo docker compose restart
+sudo docker compose down   # 仅停止服务；不会删除 db、sessions 等主机数据
+```
+
+部署脚本适用于 Ubuntu/Debian Linux，并需要可交互终端完成首次登录；默认不公开 RSS 或其他端口。详细流程及可选迁移步骤见 [`deploy.sh`](deploy.sh) 和下文。
+
 ## 快速启动
 
 需要 Python 3.11/Docker、Telegram API 凭据、一个 Bot Token，以及已加入源群组/频道的 Telegram 用户账号。仅导入和监听你有权访问的聊天。
