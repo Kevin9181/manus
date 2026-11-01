@@ -38,6 +38,7 @@ async def process_forward_rule(client, event, chat_id, rule):
     if should_forward:
         target_chat = rule.target_chat
         target_chat_id = int(target_chat.telegram_chat_id)
+        drop_author = bool(getattr(rule, 'is_monitor_full_channel', False))
         
         try:
             
@@ -65,7 +66,8 @@ async def process_forward_rule(client, event, chat_id, rule):
                 await client.forward_messages(
                     target_chat_id,
                     messages,
-                    event.chat_id
+                    event.chat_id,
+                    drop_author=drop_author
                 )
                 logger.info(f'[用户] 已转发 {len(messages)} 条媒体组消息到: {target_chat.name} ({target_chat_id})')
                 
@@ -74,11 +76,12 @@ async def process_forward_rule(client, event, chat_id, rule):
                 await client.forward_messages(
                     target_chat_id,
                     event.message.id,
-                    event.chat_id
+                    event.chat_id,
+                    drop_author=drop_author
                 )
                 logger.info(f'[用户] 消息已转发到: {target_chat.name} ({target_chat_id})')
                 
                 
         except Exception as e:
             logger.error(f'转发消息时出错: {str(e)}')
-            logger.exception(e) 
+            logger.exception(e)
