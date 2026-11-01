@@ -34,6 +34,7 @@ class FakeClient:
 class UserHandlerDropAuthorTests(unittest.IsolatedAsyncioTestCase):
     def make_rule(self, is_full_channel):
         return SimpleNamespace(
+            id=1,
             enable_rule=True,
             is_filter_user_info=False,
             forward_mode=SimpleNamespace(value="BLACKLIST"),
