@@ -111,9 +111,10 @@ python import_monitor_config.py /path/to/telegram-monitor/config/config.json
 
 ## 旧命令与合并版命令
 
-- `/addkw <词语>`、`/delkw <词语>` 分别作为 `/add`、`/remove_keyword` 的别名，作用于当前选中的规则。
-- `/show`、`/list_rule` 查看转发规则；`/allow <用户ID>`、`/unallow <用户ID>` 管理导入的 Monitor 白名单。
-- 旧版 `/addwatch`、`/delwatch`、`/addgroup`、`/delgroup` 没有明确的来源—目标配对上下文；迁移时自动转换为独立规则。迁移后通过 `/settings` 修改某个来源到某个目标的规则，新增配对用 `/bind <源> <目标>`。
+- 导入 Monitor 配置后，`/show` 显示旧版配置摘要；`/list_rule` 始终显示统一数据库中的全部规则。
+- 对导入的 Monitor 关键词路由，`/addkw <词语>`、`/delkw <词语>` 会按旧版语义全局增删关键词；没有 Monitor 路由时，它们仍分别作为 Forwarder `/add`、`/remove_keyword` 的当前规则别名。
+- `/addwatch <源>`、`/delwatch <源>` 会为所有现有 Monitor 关键词目标增删来源；`/addgroup <目标>`、`/delgroup <目标>` 会为所有 Monitor 关键词来源增删目标。删除操作只删除相应的 Monitor 关键词规则，不删除全量频道规则或 Forwarder 普通规则。
+- `/allow <用户ID>`、`/unallow <用户ID>` 管理导入的 Monitor 白名单。全量频道原生转发规则也进入同一数据库，可通过 `/list_rule` 和 `/settings` 查看/管理。
 - 原 Monitor 的简易关键字路由与 Forwarder 的规则过滤功能并存于同一条规则链，不会再有两套 Bot/监听进程互相覆盖配置。
 
 ## 直接运行

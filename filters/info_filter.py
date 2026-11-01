@@ -118,6 +118,8 @@ class InfoFilter(BaseFilter):
             if rule.is_original_sender:
                 try:
                     sender = getattr(event.message, "sender_chat", None) or getattr(event, "sender", None)
+                    sender_name = "Unknown Sender"
+                    sender_id = "Unknown"
                     if sender:
                         sender_name = (
                             getattr(sender, "title", None)
@@ -125,11 +127,23 @@ class InfoFilter(BaseFilter):
                             or "Unknown Sender"
                         )
                         sender_id = getattr(sender, "id", "Unknown")
-                        if getattr(rule, "userinfo_template", None):
-                            user_info = rule.userinfo_template.replace("{name}", str(sender_name)).replace("{id}", str(sender_id))
-                            context.sender_info = f"{user_info}\n\n"
-                        else:
-                            context.sender_info = f"{sender_name}\n\n"
+                    else:
+                        peer = getattr(event.message, "peer_id", None)
+                        if peer is not None and getattr(peer, "channel_id", None):
+                            sender_id = peer.channel_id
+                            try:
+                                sender = await event.client.get_entity(peer)
+                                sender_name = getattr(sender, "title", None) or "Unknown Channel"
+                                sender_id = getattr(sender, "id", sender_id)
+                            except Exception as peer_error:
+                                logger.error("获取 peer_id 对应频道信息失败: %s", peer_error)
+                                sender_name = "Unknown Channel"
+
+                    if getattr(rule, "userinfo_template", None):
+                        user_info = rule.userinfo_template.replace("{name}", str(sender_name)).replace("{id}", str(sender_id))
+                        context.sender_info = f"{user_info}\n\n"
+                    else:
+                        context.sender_info = f"{sender_name}\n\n"
                 except Exception as error:
                     logger.error("获取发送者信息出错: %s", error)
 

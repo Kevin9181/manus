@@ -46,6 +46,7 @@ class ForwardRule(Base):
     enable_rule = Column(Boolean, default=True)  # 是否启用规则
     is_filter_user_info = Column(Boolean, default=False)  # 是否过滤用户信息
     is_monitor_compat = Column(Boolean, default=False)  # 是否为旧版 Telegram Monitor 导入规则
+    is_monitor_full_channel = Column(Boolean, default=False)  # 是否为旧版 Monitor 全量频道转发规则
     handle_mode = Column(Enum(HandleMode), nullable=False, default=HandleMode.FORWARD) # 处理模式,编辑模式和转发模式，默认转发
     enable_comment_button = Column(Boolean, default=False)  # 是否添加对应消息的评论区直达按钮
     enable_media_type_filter = Column(Boolean, default=False)  # 是否启用媒体类型过滤
@@ -468,11 +469,14 @@ def init_db():
     # 然后进行必要的迁移
     migrate_db(engine)
     columns = {column['name'] for column in inspect(engine).get_columns('forward_rules')}
-    if 'is_monitor_compat' not in columns:
-        with engine.begin() as connection:
-            connection.execute(text(
-                'ALTER TABLE forward_rules ADD COLUMN is_monitor_compat BOOLEAN NOT NULL DEFAULT 0'
-            ))
+    monitor_columns = {
+        'is_monitor_compat': 'ALTER TABLE forward_rules ADD COLUMN is_monitor_compat BOOLEAN NOT NULL DEFAULT 0',
+        'is_monitor_full_channel': 'ALTER TABLE forward_rules ADD COLUMN is_monitor_full_channel BOOLEAN NOT NULL DEFAULT 0',
+    }
+    for column, sql in monitor_columns.items():
+        if column not in columns:
+            with engine.begin() as connection:
+                connection.execute(text(sql))
     return engine
 
 def get_session():

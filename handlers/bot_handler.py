@@ -2,6 +2,7 @@ from telethon import events
 import json
 from handlers.button.callback.callback_handlers import handle_callback
 from handlers.command_handlers import *
+from handlers.monitor_compat import handle_legacy_monitor_command
 from handlers.link_handlers import handle_message_link
 from telethon.tl.types import ChannelParticipantsAdmins
 from dotenv import load_dotenv
@@ -105,6 +106,14 @@ async def handle_command(client, event):
     # 分割命令，处理可能带有机器人用户名的情况
     parts = message.text.split()
     command = parts[0].split('@')[0][1:]  # 移除开头的 '/' 并处理可能的 @username
+
+    if command in {'show', 'addkw', 'delkw', 'addgroup', 'delgroup', 'addwatch', 'delwatch'}:
+        handled = await handle_legacy_monitor_command(event, command, parts)
+        if handled:
+            return
+        if command in {'addgroup', 'delgroup', 'addwatch', 'delwatch'}:
+            await event.reply('这些是 Monitor 兼容命令。请先导入 Monitor 配置，或使用 /bind 管理普通 Forwarder 规则。')
+            return
 
     # 命令处理器字典
     command_handlers = {
@@ -218,4 +227,3 @@ async def send_welcome_message(client):
         link_preview=True
     )
     logger.info("已发送欢迎消息")
-

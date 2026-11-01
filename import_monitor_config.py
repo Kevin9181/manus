@@ -222,6 +222,7 @@ async def import_config(config_path, dry_run=False, allow_unresolved_source_ids=
                         use_bot=False,
                         enable_rule=True,
                         is_monitor_compat=False,
+                        is_monitor_full_channel=True,
                     ))
             session.commit()
         except Exception:

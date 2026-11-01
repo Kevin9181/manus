@@ -184,15 +184,31 @@ async def register_bot_commands(bot):
         ),
         BotCommand(
             command='show',
-            description='查看所有转发规则'
+            description='查看 Monitor 配置或所有规则'
         ),
         BotCommand(
             command='addkw',
-            description='添加关键词到当前规则'
+            description='添加关键词（Monitor 全局/当前规则）'
         ),
         BotCommand(
             command='delkw',
-            description='删除当前规则关键词'
+            description='删除关键词（Monitor 全局/当前规则）'
+        ),
+        BotCommand(
+            command='addwatch',
+            description='添加 Monitor 关键词监听源'
+        ),
+        BotCommand(
+            command='delwatch',
+            description='删除 Monitor 关键词监听源'
+        ),
+        BotCommand(
+            command='addgroup',
+            description='添加 Monitor 关键词转发目标'
+        ),
+        BotCommand(
+            command='delgroup',
+            description='删除 Monitor 关键词转发目标'
         ),
         # 绑定和设置
         BotCommand(
