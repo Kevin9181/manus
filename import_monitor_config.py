@@ -11,9 +11,12 @@ import logging
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 from dotenv import load_dotenv
 from telethon import TelegramClient
+from telethon.tl.types import PeerChannel
+from telethon.utils import resolve_id
 
 from enums.enums import AddMode, ForwardMode
 from models.models import Chat, ForwardRule, Keyword, get_session, init_db
@@ -23,9 +26,11 @@ logger = logging.getLogger("monitor_import")
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Import Telegram Monitor JSON config into this unified app")
+    parser = argparse.ArgumentParser(description="Import Telegram Monitor config.json into this unified app")
     parser.add_argument("config", help="Path to Telegram Monitor config.json")
     parser.add_argument("--dry-run", action="store_true", help="Resolve and report mappings without writing database/admin changes")
+    parser.add_argument("--allow-unresolved-source-ids", action="store_true",
+                        help="Import numeric channel sources by ID when the user session cannot resolve their entity; does not grant Telegram access")
     return parser.parse_args()
 
 
@@ -38,7 +43,7 @@ def _entity_label(entity):
     )
 
 
-async def _resolve(client, value):
+async def _resolve(client, value, allow_unresolved_source_ids=False):
     text = str(value).strip()
     if not text:
         raise ValueError("聊天标识不能为空")
@@ -55,13 +60,27 @@ async def _resolve(client, value):
             return await client.get_entity(candidate)
         except Exception as error:
             last_error = error
+    if allow_unresolved_source_ids and text.lstrip("-").isdigit():
+        try:
+            peer_id, peer_type = resolve_id(int(text))
+            if peer_type is PeerChannel:
+                logger.warning("一个源频道仅按数字 ID 建立占位规则；运行账号仍须拥有该频道访问权限")
+                return SimpleNamespace(
+                    id=peer_id,
+                    title="Monitor channel (ID-only)",
+                    username=None,
+                    is_id_only=True,
+                )
+        except Exception:
+            pass
     raise ValueError(f"无法解析聊天 {value!r}: {last_error}")
 
 
-def _get_or_create_chat(session, entity):
-    # The original Forwarder stores Telethon entity.id (positive ID); its listener
-    # and target sender already normalize Telegram peer IDs around this convention.
-    chat_id = str(entity.id)
+def _get_or_create_chat(session, entity, telegram_chat_id=None):
+    # Source chats use positive Telethon entity.id values for listener matching.
+    # Full-channel targets may preserve a marked peer ID (for example, -100...) so
+    # Telethon can resolve the correct channel when forwarding natively.
+    chat_id = str(entity.id if telegram_chat_id is None else telegram_chat_id)
     chat = session.query(Chat).filter(Chat.telegram_chat_id == chat_id).first()
     if not chat:
         chat = Chat(telegram_chat_id=chat_id, name=_entity_label(entity))
@@ -84,18 +103,22 @@ def _normalize_admins(values):
     return admins
 
 
-async def import_config(config_path, dry_run=False):
+async def import_config(config_path, dry_run=False, allow_unresolved_source_ids=False):
     with open(config_path, "r", encoding="utf-8") as file:
         config = json.load(file)
 
     watch_ids = config.get("watch_ids") or []
     target_ids = config.get("target_ids") or []
+    channel_watch_ids = config.get("channel_watch_ids") or []
+    channel_target_ids = config.get("channel_target_ids") or []
     keywords = list(dict.fromkeys(str(item).strip() for item in config.get("keywords", []) if str(item).strip()))
     admins = _normalize_admins(config.get("whitelist", []))
-    if not watch_ids:
-        raise ValueError("配置没有 watch_ids，无法导入监听源")
-    if not target_ids:
-        raise ValueError("配置没有 target_ids，无法导入转发目标")
+    if watch_ids and not target_ids:
+        raise ValueError("配置有 watch_ids，但没有 target_ids")
+    if channel_watch_ids and not channel_target_ids:
+        raise ValueError("配置有 channel_watch_ids，但没有 channel_target_ids")
+    if not ((watch_ids and target_ids) or (channel_watch_ids and channel_target_ids)):
+        raise ValueError("配置没有完整的来源/目标路由")
 
     load_dotenv()
     api_id = os.getenv("API_ID")
@@ -108,14 +131,23 @@ async def import_config(config_path, dry_run=False):
     client = TelegramClient("./sessions/user", int(api_id), api_hash)
     await client.start(phone=phone or None)
     try:
-        sources = [(value, await _resolve(client, value)) for value in watch_ids]
+        sources = [
+            (value, await _resolve(client, value, allow_unresolved_source_ids))
+            for value in watch_ids
+        ]
         targets = [(value, await _resolve(client, value)) for value in target_ids]
-        logger.info("待迁移: %d 个来源 × %d 个目标 = %d 条规则；关键词 %d 个；白名单 %d 人",
+        channel_sources = [
+            (value, await _resolve(client, value, allow_unresolved_source_ids))
+            for value in channel_watch_ids
+        ]
+        channel_targets = [(value, await _resolve(client, value)) for value in channel_target_ids]
+        logger.info("关键词路由: %d 个来源 × %d 个目标 = %d 条规则；关键词 %d 个；白名单 %d 人",
                     len(sources), len(targets), len(sources) * len(targets), len(keywords), len(admins))
-        for source_value, source in sources:
-            for target_value, target in targets:
-                logger.info("%s (%s) -> %s (%s)", _entity_label(source), source.id,
-                            _entity_label(target), target.id)
+        logger.info("全量频道原生转发: %d 个来源 × %d 个目标 = %d 条规则",
+                    len(channel_sources), len(channel_targets), len(channel_sources) * len(channel_targets))
+        id_only_sources = sum(1 for _, source in sources + channel_sources if getattr(source, "is_id_only", False))
+        if id_only_sources:
+            logger.warning("其中 %d 个来源按数字 ID 建立占位记录；Telegram 不会因此授予账号访问权限", id_only_sources)
         if dry_run:
             return
 
@@ -165,6 +197,32 @@ async def import_config(config_path, dry_run=False):
                     if not keywords:
                         logger.warning("配置未设置关键词；与 Telegram Monitor 原行为一致，该规则不会命中转发消息: %s -> %s",
                                        source_chat.name, target_chat.name)
+
+            for _, source_entity in channel_sources:
+                source_chat = _get_or_create_chat(session, source_entity)
+                for target_value, target_entity in channel_targets:
+                    target_chat_id = str(target_value).strip()
+                    if not (target_chat_id.startswith("-") and target_chat_id.lstrip("-").isdigit()):
+                        target_chat_id = None
+                    target_chat = _get_or_create_chat(
+                        session, target_entity, telegram_chat_id=target_chat_id
+                    )
+                    rule = session.query(ForwardRule).filter(
+                        ForwardRule.source_chat_id == source_chat.id,
+                        ForwardRule.target_chat_id == target_chat.id,
+                    ).first()
+                    if rule:
+                        logger.warning("跳过已存在的来源—目标规则；为避免覆盖现有设置，请手动检查")
+                        continue
+                    session.add(ForwardRule(
+                        source_chat_id=source_chat.id,
+                        target_chat_id=target_chat.id,
+                        forward_mode=ForwardMode.BLACKLIST,
+                        add_mode=AddMode.BLACKLIST,
+                        use_bot=False,
+                        enable_rule=True,
+                        is_monitor_compat=False,
+                    ))
             session.commit()
         except Exception:
             session.rollback()
@@ -198,7 +256,7 @@ async def import_config(config_path, dry_run=False):
 def main():
     args = parse_args()
     try:
-        asyncio.run(import_config(args.config, args.dry_run))
+        asyncio.run(import_config(args.config, args.dry_run, args.allow_unresolved_source_ids))
     except (OSError, ValueError, json.JSONDecodeError) as error:
         logger.error("导入失败: %s", error)
         sys.exit(1)

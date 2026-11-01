@@ -9,6 +9,7 @@
 | 多个来源监听、关键词命中后转发 | 每个“来源 × 目标”建立独立规则；可同时配置多个来源和多个目标 |
 | 关键词过滤、白名单/黑名单 | 使用同一套 Forwarder 过滤引擎；普通关键词、正则关键词、组合过滤模式均保留 |
 | Monitor 消息摘要 | 导入的规则自动附加来源、发送者、时间、命中关键词和原消息直达链接 |
+| 全量频道转发 | `channel_watch_ids × channel_target_ids` 单独建立无关键词规则，使用用户账号原生转发消息，保留旧项目的全量转发语义 |
 | 多目标与规则管理 | 合并到同一个规则数据库和 Bot 管理界面，可单独启停、调整每条规则 |
 | 权限白名单 | 导入旧 Monitor `whitelist`；主管理员可用 `/allow`、`/unallow` 修改 |
 | 消息处理 | 保留内容替换、媒体类型/大小/扩展名过滤、编辑/转发模式、延迟、评论区按钮等 |
@@ -91,13 +92,13 @@ install -m 600 /path/to/telegram-monitor/config/config.json ./config/monitor-con
 ```bash
 docker compose build
 docker compose run --rm -it telegram-forwarder \
-  python import_monitor_config.py /app/config/monitor-config.json --dry-run
+  python import_monitor_config.py /app/config/monitor-config.json --dry-run --allow-unresolved-source-ids
 
 docker compose run --rm -it telegram-forwarder \
-  python import_monitor_config.py /app/config/monitor-config.json
+  python import_monitor_config.py /app/config/monitor-config.json --allow-unresolved-source-ids
 ```
 
-导入器会解析旧配置的 `watch_ids`、`target_ids`、`keywords`、`whitelist`，为每个来源与目标组合创建规则，把关键词转为白名单匹配，并启用用户账号转发及 Monitor 来源摘要。旧配置的空关键词列表会按 Monitor 原行为导入为不命中任何消息的规则。导入是可重复运行的；已有的非兼容规则不会被覆盖。
+导入器会把 `watch_ids × target_ids` 转为关键词规则（带 Monitor 来源摘要），并把 `channel_watch_ids × channel_target_ids` 转为独立的全量频道原生转发规则（不经过关键词筛选）。`keywords` 与 `whitelist` 也会迁移。`--allow-unresolved-source-ids` 仅适用于确认无误的数字频道源 ID：当 Telethon 当前缓存不能解析实体时，导入器会按 Telegram marked channel ID 保存占位来源；它不会授予账号频道权限，用户账号仍须能收到该频道更新。目标 ID 仍需由账号解析。若关键词列表为空，关键词规则按 Monitor 原行为导入为不命中任何消息。导入可重复运行；已有规则不会被覆盖。
 
 如果使用 Python 直接运行而不是 Docker：先在项目根目录配置 `.env`、安装依赖、启动一次 `python main.py` 完成登录，然后运行：
 
