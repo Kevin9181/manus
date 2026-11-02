@@ -495,7 +495,7 @@ async def create_buttons(rule):
             )
         ])
 
-        if RSS_ENABLED == 'false':
+        if not RSS_ENABLED:
             # 处理模式
             buttons.append([
                 Button.inline(
@@ -651,5 +651,4 @@ async def create_buttons(rule):
         session.close()
 
     return buttons
-
 

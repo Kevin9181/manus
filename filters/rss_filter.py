@@ -58,7 +58,7 @@ class RSSFilter(BaseFilter):
 
         # 检查RSS配置是否存在
         if rss_config is None:
-            logger.error(f"找不到规则ID为 {context.rule.id} 的RSS配置，跳过RSS处理")
+            logger.debug("规则ID为 %s 未配置 RSS，跳过 RSS 处理", context.rule.id)
             session.close()
             return True
         

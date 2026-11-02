@@ -5,6 +5,12 @@ from dotenv import load_dotenv
 # 加载环境变量
 load_dotenv()
 
+def parse_bool_env(value, default=False):
+    """解析常见布尔型环境变量。"""
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
 # 目录配置
 BASE_DIR = Path(__file__).parent.parent
 TEMP_DIR = os.path.join(BASE_DIR, 'temp')
@@ -18,7 +24,7 @@ RSS_BASE_URL = os.environ.get('RSS_BASE_URL', None)
 # RSS媒体文件的基础URL，用于生成媒体链接，如果未设置，则使用请求的URL
 RSS_MEDIA_BASE_URL = os.getenv('RSS_MEDIA_BASE_URL', '')
 
-RSS_ENABLED = os.getenv('RSS_ENABLED', 'false')
+RSS_ENABLED = parse_bool_env(os.getenv('RSS_ENABLED'), default=False)
 
 RULES_PER_PAGE = int(os.getenv('RULES_PER_PAGE', 20))
 
