@@ -29,14 +29,15 @@ class RSSFilterOptionalConfigTests(unittest.IsolatedAsyncioTestCase):
     async def test_disabled_rss_skips_database_lookup(self):
         context = SimpleNamespace(should_forward=True)
         with TemporaryDirectory() as media_dir:
+            with patch.object(rss_filter, "RSS_MEDIA_DIR", media_dir):
+                rss_filter_instance = rss_filter.RSSFilter()
             with (
-                patch.object(rss_filter, "RSS_MEDIA_DIR", media_dir),
                 patch.object(rss_filter, "RSS_ENABLED", False),
                 patch.object(rss_filter, "get_db_ops", new_callable=AsyncMock) as get_db_ops,
                 patch.object(rss_filter, "get_session") as get_session,
                 self.assertLogs("filters.rss_filter", level="DEBUG") as captured,
             ):
-                result = await rss_filter.RSSFilter()._process(context)
+                result = await rss_filter_instance._process(context)
 
         self.assertTrue(result)
         get_db_ops.assert_not_awaited()
