@@ -34,12 +34,20 @@ class RSSFilterOptionalConfigTests(unittest.IsolatedAsyncioTestCase):
                 patch.object(rss_filter, "RSS_ENABLED", False),
                 patch.object(rss_filter, "get_db_ops", new_callable=AsyncMock) as get_db_ops,
                 patch.object(rss_filter, "get_session") as get_session,
+                self.assertLogs("filters.rss_filter", level="DEBUG") as captured,
             ):
                 result = await rss_filter.RSSFilter()._process(context)
 
         self.assertTrue(result)
         get_db_ops.assert_not_awaited()
         get_session.assert_not_called()
+        disabled_records = [
+            record for record in captured.records
+            if "RSS未启用" in record.getMessage()
+        ]
+        self.assertEqual(len(disabled_records), 1)
+        self.assertEqual(disabled_records[0].levelno, logging.DEBUG)
+        self.assertFalse(any(record.levelno >= logging.INFO for record in captured.records))
 
     async def test_missing_rule_config_is_debug_skip_not_error(self):
         fake_db_ops = SimpleNamespace(get_rss_config=AsyncMock(return_value=None))

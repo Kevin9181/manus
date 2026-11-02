@@ -44,7 +44,7 @@ class RSSFilter(BaseFilter):
         """处理RSS过滤器逻辑"""
         
         if not RSS_ENABLED:
-            logger.info("RSS未启用，跳过RSS处理")
+            logger.debug("RSS未启用，跳过RSS处理")
             return True
         
         if not context.should_forward:
