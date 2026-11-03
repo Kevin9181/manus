@@ -1,137 +1,232 @@
 # Telegram Unified Forwarder
 
-一个整合 **Telegram Monitor** 与 **TelegramForwarder** 能力的 Telegram 消息监控、过滤和分发程序。运行时只使用一套 Telethon 客户端、一个数据库和一条过滤/转发流水线，避免两个原项目同时监听导致重复转发。
+把 Telegram 上多个群组/频道里的消息，按关键词筛出来，转发到你指定的会话——并自动附上来源、发送者、时间和原帖链接。
 
-## 合并后的能力
+它是 [Telegram Monitor](https://github.com/Kevin9181/telegram-monitor) 与 [TelegramForwarder](https://github.com/heavrnl/TelegramForwarder) 的合并版。两个原项目各跑一套 Telethon 客户端、各存一份配置，同时使用会重复转发；合并后只保留**一套客户端、一个数据库、一条过滤流水线**。
 
-| 能力 | 整合结果 |
+## 适合谁
+
+- 盯几十个群/频道，只把命中关键词的消息转到自己的私聊或频道
+- 希望转发出来的消息自带来源和原帖链接，方便溯源
+- 需要对某些频道做**全量转发**（不做关键词过滤，原样搬）
+- 想在手机上用 Bot 管规则，而不是登录服务器改配置
+
+> 只监听你有权访问的聊天。本项目不提供任何绕过权限的能力。
+
+## 功能一览
+
+| 能力 | 说明 |
 |---|---|
-| 多个来源监听、关键词命中后转发 | 每个“来源 × 目标”建立独立规则；可同时配置多个来源和多个目标 |
-| 关键词过滤、白名单/黑名单 | 使用同一套 Forwarder 过滤引擎；普通关键词、正则关键词、组合过滤模式均保留 |
-| Monitor 消息摘要 | 导入的规则自动附加来源、发送者、时间、命中关键词和原消息直达链接 |
-| 全量频道转发 | `channel_watch_ids × channel_target_ids` 单独建立无关键词规则，使用用户账号原生转发消息，保留旧项目的全量转发语义 |
-| 多目标与规则管理 | 合并到同一个规则数据库和 Bot 管理界面，可单独启停、调整每条规则 |
-| 权限白名单 | 导入旧 Monitor `whitelist`；主管理员可用 `/allow`、`/unallow` 修改 |
-| 消息处理 | 保留内容替换、媒体类型/大小/扩展名过滤、编辑/转发模式、延迟、评论区按钮等 |
-| AI 与定时总结 | 保留内置 AI 服务商配置、消息处理和定时总结 |
-| 多平台推送与 RSS | 保留 Apprise 推送、RSS 订阅和 RSS 管理页面 |
-| 其他 | 保留链接转发、规则复制/同步、导入导出、UFB 集成等原 Forwarder 能力 |
+| 多来源 × 多目标 | 每个「来源 × 目标」是一条独立规则，可单独启停和调整 |
+| 关键词过滤 | 普通关键词、正则关键词、黑名单/白名单、组合模式 |
+| 来源摘要 | 转发时自动附加来源、发送者、时间、命中关键词和原帖链接 |
+| 全量频道转发 | `channel_watch_ids × channel_target_ids` 走无关键词规则，原生转发 |
+| Bot 管理 | `/bind`、`/settings`、`/add` 等命令，不用改文件 |
+| 内容处理 | 替换规则、媒体类型/大小/扩展名过滤、编辑或转发模式、延迟、评论区按钮 |
+| AI 处理 | 内置多家服务商配置，可对消息做改写或定时总结 |
+| 推送与 RSS | Apprise 多平台推送、RSS 订阅与管理页面 |
+| 其他 | 链接转发、规则复制/同步、导入导出、UFB 集成 |
 
-两个项目重复的多源监听、关键词筛选、转发目标管理与 Bot 管理由同一套规则系统实现，不再并行保留两份监听服务。Monitor 的旧配置通过导入器迁移；其 Ubuntu/systemd 与 SSH 安装脚本不是运行时功能，本合并版统一使用 Docker Compose 或直接运行 Python 服务。
+## 快速开始
 
-## 一键部署（Ubuntu/Debian）
+### 0. 准备三样东西
 
-在全新的 Ubuntu/Debian 服务器上，先创建 Telegram API 凭据、Bot Token 和管理员用户 ID，然后以 root 执行下面这一条命令：
+| 需要 | 从哪里获取 |
+|---|---|
+| `API_ID` / `API_HASH` | <https://my.telegram.org/apps> 创建应用 |
+| `BOT_TOKEN` | 找 [@BotFather](https://t.me/BotFather) 创建机器人 |
+| 用户账号 | **必须已加入**所有要监听的来源群组/频道，否则收不到消息 |
 
-```bash
-git clone https://github.com/Kevin9181/manus.git && cd manus && sudo ./deploy.sh
-```
+`USER_ID` 可以用 [@userinfobot](https://t.me/userinfobot) 查。
 
-`deploy.sh` 会检查系统和 Docker；缺少 Docker 时先询问是否从 Docker 官方站点安装。随后它会交互式收集必需凭据、以 `0600` 权限写入本机 `.env`、构建镜像，并在首次运行时启动登录向导。按 Telegram 提示输入验证码/二步验证密码；看到客户端启动后按 `Ctrl+C` 返回部署脚本，脚本会验证 user/Bot 会话并启动后台容器。脚本不会把凭据输出到屏幕或提交到 Git。
-
-如果要迁移旧版 Monitor 配置，可在部署前将旧 `config.json` 放入 `manus/config/monitor-config.json`，并确保该文件权限为 `0600`；首次登录后脚本会预览并询问是否导入。部署完成后，可在项目目录查看或管理服务：
-
-先克隆并准备私有配置，再执行部署：
+### 1. 一键部署（Ubuntu / Debian）
 
 ```bash
 git clone https://github.com/Kevin9181/manus.git
-mkdir -p manus/config
-install -m 600 /path/to/telegram-monitor/config/config.json manus/config/monitor-config.json
-cd manus && sudo ./deploy.sh
+cd manus
+sudo ./deploy.sh
 ```
 
+脚本会依次完成：
+
+1. 检查系统与 Docker（缺 Docker 时询问后安装）
+2. 交互式收集凭据，以 `0600` 权限写入 `.env`（**不会打印、不会提交到 Git**）
+3. 构建镜像
+4. 启动首次登录向导
+
+### 2. 首次登录
+
+Telegram 用户账号和 Bot 各自需要一次登录：
+
 ```bash
-sudo docker compose ps
-sudo docker compose logs -f telegram-forwarder
-sudo docker compose restart
-sudo docker compose down   # 仅停止服务；不会删除 db、sessions 等主机数据
+sudo docker compose run --rm -it telegram-forwarder
 ```
 
-部署脚本适用于 Ubuntu/Debian Linux，并需要可交互终端完成首次登录；默认不公开 RSS 或其他端口。详细流程及可选迁移步骤见 [`deploy.sh`](deploy.sh) 和下文。
+按提示输入**手机号收到的验证码**（开了两步验证的话再输入密码），看到类似下面的输出就是成功：
 
-## 快速启动
-
-需要 Python 3.11/Docker、Telegram API 凭据、一个 Bot Token，以及已加入源群组/频道的 Telegram 用户账号。仅导入和监听你有权访问的聊天。
-
-1. 在 Telegram 官方 API 页面创建应用，获取 `API_ID` 与 `API_HASH`；使用 BotFather 创建机器人；通过 `@userinfobot` 获取自己的用户 ID。
-2. 在项目目录复制并编辑环境文件：
-
-   ```bash
-   cp .env.example .env
-   ```
-
-   至少填写 `API_ID`、`API_HASH`、`PHONE_NUMBER`、`BOT_TOKEN`、`USER_ID`。`ADMINS` 可填写逗号分隔的管理员 ID；未设置时使用 `USER_ID`。
-3. 构建并首次启动，按 Telethon 提示完成用户账号验证码/二步验证登录：
-
-   ```bash
-   docker compose build
-   docker compose run --rm -it telegram-forwarder
-   ```
-
-   登录完成后按 `Ctrl+C` 退出。`sessions/` 会持久保存登录会话。
-4. 启动后台服务：
-
-   ```bash
-   docker compose up -d
-   docker compose logs -f telegram-forwarder
-   ```
-
-之后在 Bot 管理聊天中使用 `/bind <源聊天链接或名称> [目标聊天链接或名称]` 建立规则，再用 `/settings`、`/add`、`/add_regex` 配置规则。完整的 Forwarder 操作手册见 [`README-forwarder-reference.md`](README-forwarder-reference.md)。
-
-## 从 Telegram Monitor 迁移配置
-
-迁移前先准备旧项目的 `config.json`，确保 `.env` 中的用户账号已加入所有监听源和目标聊天。将旧配置放进合并项目 `config/` 目录（此目录默认被 Git 忽略，适合放运行配置）：
-
-```bash
-mkdir -p ./config
-install -m 600 /path/to/telegram-monitor/config/config.json ./config/monitor-config.json
+```
+用户客户端已启动: ...
+机器人客户端已启动: ...
 ```
 
-先试解析，再正式导入：
+然后按 `Ctrl+C` 返回，启动后台服务：
 
 ```bash
-docker compose build
+sudo docker compose up -d
+```
+
+会话会持久化到 `sessions/`，之后重启不用再登录。
+
+### 3. 建第一条规则
+
+在 Bot 聊天里发：
+
+```
+/bind <来源群链接或名称> [目标会话链接或名称]
+/settings
+```
+
+`/settings` 里可以加关键词、开关过滤模式、调整媒体限制。完整命令手册见 [README-forwarder-reference.md](README-forwarder-reference.md)。
+
+## 日常运维
+
+所有命令都在项目目录下执行：
+
+| 需求 | 命令 |
+|---|---|
+| 看容器状态 | `docker compose ps` |
+| 实时日志 | `docker compose logs -f telegram-forwarder` |
+| 只看错误 | `docker compose logs telegram-forwarder \| grep -iE 'error\|traceback'` |
+| 重启 | `docker compose restart` |
+| 停止（保留数据） | `docker compose down` |
+| 更新代码后重建 | `git pull && docker compose build && docker compose up -d` |
+| 回滚镜像 | `docker tag telegram-unified:previous telegram-unified:latest && docker compose up -d` |
+
+> `docker compose down` **不会**删除 `db/`、`sessions/` 等主机目录，数据安全。真正危险的只有 `docker volume rm` 和手动 `rm -rf`。
+
+## 备份与恢复
+
+会话文件等同于账号凭据，数据库存着全部规则，两者都要备份。
+
+```bash
+# 每天 03:30 备份，保留最近 7 份
+sudo cp scripts/backup.sh /root/tf-backup.sh
+sudo chmod 700 /root/tf-backup.sh
+(crontab -l 2>/dev/null; echo "30 3 * * * /root/tf-backup.sh >> /root/backups/cron.log 2>&1") | crontab -
+```
+
+脚本会做三件事：用 SQLite 在线备份 API 导出数据库（避免拷到写了一半的文件）、打包 `db/ sessions/ .env`、清理旧备份。产物落在 `/root/backups/`，权限 `600`。
+
+**恢复**：
+
+```bash
+docker compose down
+tar xzf /root/backups/tf-<时间戳>.tar.gz -C /opt/telegram-unified
+docker compose up -d
+```
+
+## 健康告警（可选）
+
+想让服务器出问题时主动找你，而不是等你想起来去看：
+
+```bash
+sudo cp scripts/alert.sh /root/tf-alert.sh
+sudo chmod 700 /root/tf-alert.sh
+sudo /root/tf-alert.sh --test          # 先验证 Telegram 能收到
+(crontab -l 2>/dev/null; echo "*/5 * * * * /root/tf-alert.sh >> /root/backups/alert.log 2>&1") | crontab -
+```
+
+触发条件（可用环境变量覆盖）：
+
+| 指标 | 默认阈值 | 变量 |
+|---|---|---|
+| 可用内存 | < 100 MB | `MIN_AVAIL_MB` |
+| 根分区使用率 | > 85% | `MAX_DISK_PCT` |
+| Swap 使用 | > 400 MB | `MAX_SWAP_MB` |
+| 容器状态 | 非 `healthy` | `CONTAINER` |
+
+同一条告警只推一次，恢复时补发一条 ✅，不会每 5 分钟刷屏。
+
+## 安全基线
+
+项目本身不监听任何公网端口（RSS 默认也不发布），但服务器层面建议至少做到：
+
+```bash
+# 1. 只允许密钥登录（先确认密钥能进，再关密码！）
+sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sed -i 's/^#*KbdInteractiveAuthentication.*/KbdInteractiveAuthentication no/' /etc/ssh/sshd_config
+sshd -t && systemctl reload ssh
+
+# 2. 防火墙只放行 SSH
+ufw allow 22/tcp && ufw --force enable
+
+# 3. 挡住密码爆破
+apt install -y fail2ban && systemctl enable --now fail2ban
+```
+
+⚠️ 关密码前务必先验证密钥登录可用，否则会把自己锁在门外。
+
+## 排障速查
+
+| 现象 | 先看什么 |
+|---|---|
+| 完全没消息进来 | `docker compose logs --tail 50` 看两个客户端是否「已启动」；账号是否还在源群里 |
+| 有消息但不转发 | 日志搜「未匹配」「关键字匹配成功」；确认规则是白名单还是黑名单模式 |
+| 某个来源一直不生效 | 该来源 ID 是否能被当前账号解析（私群需账号在群内） |
+| 媒体总是发不出去 | `.env` 的 `DEFAULT_MAX_MEDIA_SIZE`，以及规则里的媒体过滤 |
+| 容器反复重启 | `docker compose logs` 搜 Traceback；`docker inspect` 看 `OOMKilled` |
+| 提示 session 失效 | 删掉 `sessions/*.session` 后重新执行首次登录 |
+| 端口冲突 | 默认不发布端口；只有启用 RSS 时才需要 `9804:8000` |
+
+## 从 Telegram Monitor 迁移
+
+旧配置里的监听源、目标、关键词、白名单可以整体导入。
+
+```bash
+# 1. 把旧配置放进 config/（该目录已被 .gitignore 忽略）
+mkdir -p config
+install -m 600 /path/to/telegram-monitor/config/config.json config/monitor-config.json
+
+# 2. 先预览，确认无误再执行
 docker compose run --rm -it telegram-forwarder \
   python import_monitor_config.py /app/config/monitor-config.json --dry-run --allow-unresolved-source-ids
 
+# 3. 正式导入（可重复运行，已有规则不会被覆盖）
 docker compose run --rm -it telegram-forwarder \
   python import_monitor_config.py /app/config/monitor-config.json --allow-unresolved-source-ids
 ```
 
-导入器会把 `watch_ids × target_ids` 转为关键词规则（带 Monitor 来源摘要），并把 `channel_watch_ids × channel_target_ids` 转为独立的全量频道原生转发规则（不经过关键词筛选）。`keywords` 与 `whitelist` 也会迁移。`--allow-unresolved-source-ids` 仅适用于确认无误的数字频道源 ID：当 Telethon 当前缓存不能解析实体时，导入器会按 Telegram marked channel ID 保存占位来源；它不会授予账号频道权限，用户账号仍须能收到该频道更新。目标 ID 仍需由账号解析。若关键词列表为空，关键词规则按 Monitor 原行为导入为不命中任何消息。导入可重复运行；已有规则不会被覆盖。
+导入器会把 `watch_ids × target_ids` 转成关键词规则，把 `channel_*` 转成独立的**全量转发**规则。旧的白名单保存在 `migration/monitor_compat_admins.json`，可用 `/allow`、`/unallow` 维护。
 
-如果使用 Python 直接运行而不是 Docker：先在项目根目录配置 `.env`、安装依赖、启动一次 `python main.py` 完成登录，然后运行：
+`--allow-unresolved-source-ids` 只适用于确认无误的数字频道 ID：当账号还没能解析该实体时，按 marked channel ID 存占位来源。它不会授予任何权限，账号仍然必须能收到该频道的更新。
 
-```bash
-python import_monitor_config.py /path/to/telegram-monitor/config/config.json --dry-run
-python import_monitor_config.py /path/to/telegram-monitor/config/config.json
+## 目录结构
+
+```
+.
+├── main.py                  # 入口：启客户端、调度器、监听器
+├── message_listener.py      # 消息分发到规则
+├── filters/                 # 过滤/转发流水线
+│   ├── info_filter.py       #   来源、发送者、时间、关键词、原帖链接
+│   ├── sender_filter.py     #   组装并发送
+│   └── ...
+├── handlers/                # Bot 命令与按钮
+├── models/                  # SQLAlchemy 模型与数据库操作
+├── rss/                     # 可选 RSS 服务（FastAPI）
+├── scripts/                 # 运维脚本（备份、告警）
+├── deploy.sh                # 一键部署
+├── docker-compose.yml
+└── .env.example             # 配置模板
 ```
 
-导入的白名单保存在 `migration/monitor_compat_admins.json`，已加入 `.gitignore`；该名单与 `.env` 的管理员列表取并集。迁移白名单中的第一位用户是 `/allow`、`/unallow` 的主管理员，不能被移除。Docker Compose 将 `migration/` 挂载到容器中以持久保存此名单。
+运行时目录（`db/` `sessions/` `logs/` `temp/` `config/`）由 Compose 挂载，不进版本库。
 
-## 旧命令与合并版命令
+## 更多文档
 
-- 导入 Monitor 配置后，`/show` 显示旧版配置摘要；`/list_rule` 始终显示统一数据库中的全部规则。
-- 对导入的 Monitor 关键词路由，`/addkw <词语>`、`/delkw <词语>` 会按旧版语义全局增删关键词；没有 Monitor 路由时，它们仍分别作为 Forwarder `/add`、`/remove_keyword` 的当前规则别名。
-- `/addwatch <源>`、`/delwatch <源>` 会为所有现有 Monitor 关键词目标增删来源；`/addgroup <目标>`、`/delgroup <目标>` 会为所有 Monitor 关键词来源增删目标。删除操作只删除相应的 Monitor 关键词规则，不删除全量频道规则或 Forwarder 普通规则。
-- `/allow <用户ID>`、`/unallow <用户ID>` 管理导入的 Monitor 白名单。全量频道原生转发规则也进入同一数据库，可通过 `/list_rule` 和 `/settings` 查看/管理。
-- 原 Monitor 的简易关键字路由与 Forwarder 的规则过滤功能并存于同一条规则链，不会再有两套 Bot/监听进程互相覆盖配置。
+- [README-forwarder-reference.md](README-forwarder-reference.md) — 完整的 Forwarder 命令与过滤器手册
+- [NOTICE.md](NOTICE.md) — 代码来源与归属
+- [deploy.sh](deploy.sh) — 部署脚本源码（含交互流程）
 
-## 直接运行
+## 许可
 
-```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-# 填好 .env 后
-python main.py
-```
-
-## 文件与配置安全
-
-不要提交 `.env`、Telegram session、运行数据库或包含账号 ID 的迁移配置。`config/config.json` 与 `migration/monitor_compat_admins.json` 已加入忽略规则。请定期备份 `db/`、`sessions/` 与必要的运行配置；备份 session 等同于保护账号凭据。
-
-## 许可与来源
-
-合并版以 GPL-3.0 发行，因为其核心包含 TelegramForwarder 的 GPL-3.0 代码；Telegram Monitor 原项目采用 MIT 许可，其许可文本随仓库保留为 [`LICENSE-MIT-telegram-monitor`](LICENSE-MIT-telegram-monitor)。仓库来源和归属说明见 [`NOTICE.md`](NOTICE.md)。
+以 **GPL-3.0** 发行，因为核心包含 TelegramForwarder 的 GPL-3.0 代码。Telegram Monitor 原项目为 MIT，其许可文本保留在 [LICENSE-MIT-telegram-monitor](LICENSE-MIT-telegram-monitor)。
