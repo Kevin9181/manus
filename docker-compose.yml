@@ -7,9 +7,18 @@ services:
     # ports:
     #   - 9804:8000
     restart: unless-stopped
+    mem_limit: 650m
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q main.py /proc/1/cmdline && test -f /app/sessions/user.session"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
     volumes:
       - ./db:/app/db
-      - ./.env:/app/.env
+      - ./.env:/app/.env:ro
       - ./logs:/app/logs
       - ./sessions:/app/sessions
       - ./temp:/app/temp
