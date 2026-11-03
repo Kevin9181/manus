@@ -1,4 +1,5 @@
 from telethon import events
+import html
 import json
 from handlers.button.callback.callback_handlers import handle_callback
 from handlers.command_handlers import *
@@ -8,8 +9,9 @@ from telethon.tl.types import ChannelParticipantsAdmins
 from dotenv import load_dotenv
 from utils.common import *
 from utils.media import *
+from utils.startup_report import collect_stats, render_report
 from datetime import datetime, timedelta
-from version import WELCOME_TEXT
+from version import VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -214,16 +216,44 @@ async def callback_handler(event):
     await handle_callback(event)
 
 
-async def send_welcome_message(client):
-    """发送欢迎消息"""
-    main = await get_main_module()
-    user_id = await get_user_id()
+async def send_welcome_message(client, user_client=None):
+    """发送启动自检通知：运行环境、规则概况、资源占用和常用命令。"""
+    try:
+        await _send_startup_report(client, user_client)
+    except Exception as error:
+        logger.error("发送启动通知失败: %s", error)
 
-    # 发送新消息
-    await client.send_message(
-        user_id,
-        WELCOME_TEXT,
-        parse_mode='html',
-        link_preview=True
+
+async def _send_startup_report(client, user_client=None):
+    user_id = await get_user_id()
+    db_path = os.getenv('DATABASE_URL', 'sqlite:///./db/forward.db').replace('sqlite:///', '', 1)
+    stats = collect_stats(db_path)
+
+    bot_label = '未知机器人'
+    try:
+        bot_me = await client.get_me()
+        bot_label = bot_me.first_name or '机器人'
+        if bot_me.username:
+            bot_label += f' (@{bot_me.username})'
+    except Exception:
+        pass
+
+    user_label = ''
+    if user_client is not None:
+        try:
+            user_me = await user_client.get_me()
+            user_label = user_me.first_name or ''
+            if user_me.username:
+                user_label += f' (@{user_me.username})'
+        except Exception:
+            pass
+
+    text = render_report(
+        datetime.now(),
+        VERSION,
+        html.escape(bot_label),
+        html.escape(user_label),
+        stats,
     )
-    logger.info("已发送欢迎消息")
+    await client.send_message(user_id, text, parse_mode='html', link_preview=False)
+    logger.info("已发送启动通知")
