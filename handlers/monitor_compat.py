@@ -3,6 +3,8 @@
 All changes are applied to the unified ForwardRule database; this module does
 not start or maintain a second listener process.
 """
+import asyncio
+import html
 import json
 import logging
 from pathlib import Path
@@ -10,6 +12,7 @@ from types import SimpleNamespace
 
 from enums.enums import AddMode, ForwardMode
 from models.models import Chat, ForwardRule, Keyword, get_session
+from telethon.tl import types
 from telethon.tl.types import PeerChannel
 from telethon.utils import resolve_id
 from utils.common import get_main_module
@@ -161,18 +164,90 @@ def _read_monitor_admins():
         return []
 
 
-async def _show_monitor_config(event, keyword_rules, channel_rules):
-    keywords = [value for value, is_regex in _monitor_keywords(keyword_rules) if not is_regex]
-    text = (
-        "📋 当前配置:\n\n"
-        f"🔑 关键词：\n{keywords}\n\n"
-        f"🎯 转发目标：\n{_chat_ids(keyword_rules, 'target_chat')}\n\n"
-        f"👀 关键词监听源：\n{_chat_ids(keyword_rules, 'source_chat')}\n\n"
-        f"📡 全量频道来源：\n{_chat_ids(channel_rules, 'source_chat')}\n\n"
-        f"📨 全量频道目标：\n{_chat_ids(channel_rules, 'target_chat')}\n\n"
-        f"👤 白名单用户ID：\n{_read_monitor_admins()}"
+async def _resolve_chat_label(client, session, telegram_id):
+    """把 Telegram ID 解析成 (名称, 链接)；解析不到就退回数据库里的名字。"""
+    value = str(telegram_id).strip()
+    name = None
+    username = None
+    is_user = None
+
+    if client is not None:
+        try:
+            entity = await client.get_entity(int(value))
+            username = getattr(entity, "username", None)
+            is_user = isinstance(entity, types.User)
+            name = (
+                getattr(entity, "title", None)
+                or " ".join(filter(None, [getattr(entity, "first_name", None), getattr(entity, "last_name", None)]))
+                or username
+            )
+        except Exception:
+            pass
+
+    chat_row = session.query(Chat).filter(Chat.telegram_chat_id == value).first()
+    if not name:
+        name = chat_row.name if chat_row else None
+    name = name or value
+
+    # 解析不到实体时，chats 表里有的按群/频道处理，没有的按用户处理
+    if is_user is None:
+        is_user = chat_row is None
+
+    internal = value[4:] if value.startswith("-100") else value.lstrip("-")
+    if is_user:
+        url = f"https://t.me/{username}" if username else f"tg://user?id={value}"
+    else:
+        url = f"https://t.me/{username}" if username else f"https://t.me/c/{internal}"
+
+    return name, url
+
+
+async def _format_chat_list(client, session, ids):
+    """把一组 ID 渲染成带序号和超链的多行文本。"""
+    if not ids:
+        return "（无）"
+    # 并发解析，20 个来源串行会有好几秒延迟
+    resolved = await asyncio.gather(
+        *[_resolve_chat_label(client, session, telegram_id) for telegram_id in ids],
+        return_exceptions=True,
     )
-    await event.reply(text)
+    lines = []
+    for index, (telegram_id, item) in enumerate(zip(ids, resolved), 1):
+        if isinstance(item, Exception):
+            name, url = str(telegram_id), ""
+        else:
+            name, url = item
+        label = html.escape(name, quote=False)
+        if url:
+            lines.append(f'{index}. <a href="{url}">{label}</a>')
+        else:
+            lines.append(f"{index}. {label}")
+    return "\n".join(lines)
+
+
+async def _show_monitor_config(event, keyword_rules, channel_rules, session):
+    main = await get_main_module()
+    client = getattr(main, "user_client", None) or event.client
+
+    keywords = [value for value, is_regex in _monitor_keywords(keyword_rules) if not is_regex]
+    keyword_text = "、".join(keywords) if keywords else "（无）"
+
+    targets = await _format_chat_list(client, session, _chat_ids(keyword_rules, "target_chat"))
+    sources = await _format_chat_list(client, session, _chat_ids(keyword_rules, "source_chat"))
+    channel_sources = await _format_chat_list(client, session, _chat_ids(channel_rules, "source_chat"))
+    channel_targets = await _format_chat_list(client, session, _chat_ids(channel_rules, "target_chat"))
+    admins = await _format_chat_list(client, session, [str(value) for value in _read_monitor_admins()])
+
+    text = (
+        "📋 <b>当前配置</b>\n\n"
+        f"🔑 <b>关键词</b>（{len(keywords)}）\n{keyword_text}\n\n"
+        f"🎯 <b>转发目标</b>\n{targets}\n\n"
+        f"👀 <b>关键词监听源</b>（{len(_chat_ids(keyword_rules, 'source_chat'))}）\n{sources}\n\n"
+        f"📡 <b>全量频道来源</b>\n{channel_sources}\n\n"
+        f"📨 <b>全量频道目标</b>\n{channel_targets}\n\n"
+        f"👤 <b>白名单用户</b>\n{admins}"
+    )
+    await event.reply(text, parse_mode="html")
 
 
 async def handle_legacy_monitor_command(event, command, parts):
@@ -186,7 +261,7 @@ async def handle_legacy_monitor_command(event, command, parts):
         if command == "show":
             if not has_monitor_routes:
                 return False
-            await _show_monitor_config(event, keyword_rules, channel_rules)
+            await _show_monitor_config(event, keyword_rules, channel_rules, session)
             return True
 
         if command in ("addkw", "delkw"):
