@@ -131,6 +131,10 @@ async def start_clients():
         # 发送欢迎消息
         await send_welcome_message(bot_client, user_client)
 
+        # 定期对账：Telegram 偶尔会漏推某个频道的实时更新，
+        # 不主动对账就要等下一条消息到达才会补，可能延迟很久。
+        asyncio.create_task(periodic_catch_up(user_client))
+
         # 等待两个客户端都断开连接
         await asyncio.gather(
             user_client.run_until_disconnected(),
@@ -151,6 +155,16 @@ async def start_clients():
             rss_process.terminate()
             rss_process.join()
 
+
+async def periodic_catch_up(client, interval: int = 300):
+    """每 interval 秒强制对账一次，补齐可能漏推的频道更新。"""
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            await client.catch_up()
+            logger.debug('已触发更新对账')
+        except Exception as error:
+            logger.warning('更新对账失败: %s', error)
 
 async def register_bot_commands(bot):
     """注册机器人命令"""

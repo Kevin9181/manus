@@ -68,6 +68,9 @@ async def setup_listeners(user_client, bot_client):
     # 注册机器人回调处理器
     bot_client.add_event_handler(bot_handler.callback_handler)
 
+_UNMAPPED_WARNED = set()
+
+
 async def handle_user_message(event, user_client, bot_client):
     """处理用户客户端收到的消息"""
     # logger.info("handle_user_message:开始处理用户消息")
@@ -121,6 +124,13 @@ async def handle_user_message(event, user_client, bot_client):
         ).first()
         
         if not source_chat:
+            # 每个聊天只提示一次，避免刷屏
+            if chat_id not in _UNMAPPED_WARNED:
+                _UNMAPPED_WARNED.add(chat_id)
+                logger.info(
+                    f'[未配置] 收到消息但该聊天没有规则: chat_id={chat_id} '
+                    f'名称={getattr(chat, "title", None) or getattr(chat, "first_name", None)}'
+                )
             return
             
         # 添加日志：查询转发规则
