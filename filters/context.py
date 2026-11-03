@@ -66,4 +66,16 @@ class MessageContext:
         
     def clone(self):
         """创建上下文的副本"""
-        return copy.deepcopy(self) 
+        return copy.deepcopy(self)
+
+    def compose(self, body=None):
+        """组合最终要发送的文本。
+
+        Monitor 兼容规则把正文放在最前面，这样 Telegram 通知弹窗能直接
+        显示消息内容，而不是只看到「消息来源」。其余规则保持 Forwarder
+        原有顺序（来源信息在前），行为不变。
+        """
+        body = self.message_text if body is None else body
+        if getattr(self.rule, "is_monitor_compat", False):
+            return body + self.sender_info + self.time_info + self.original_link
+        return self.sender_info + body + self.time_info + self.original_link

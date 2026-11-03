@@ -65,8 +65,8 @@ class EditFilter(BaseFilter):
             
             logger.debug(f"预览模式: {rule.is_preview}, link_preview值: {link_preview}")
             
-            # 组合消息文本
-            message_text = context.sender_info + context.message_text + context.time_info + context.original_link
+            # 组合消息文本（Monitor 兼容规则正文在前）
+            message_text = context.compose()
             
             logger.debug(f"原始消息文本: '{event.message.text}'")
             logger.debug(f"新消息文本: '{message_text}'")

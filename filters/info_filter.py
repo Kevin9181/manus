@@ -16,6 +16,32 @@ def _escape_for_parse_mode(value, message_mode):
     return re.sub(r"([_*\[\]()`])", r"\\\1", value)
 
 
+def _as_link(text, url, message_mode):
+    """Wrap text in a parse-mode-appropriate link, or return it unchanged."""
+    if not url:
+        return text
+    mode = str(getattr(message_mode, "value", message_mode) or "").lower()
+    if mode == "html":
+        return f'<a href="{html.escape(url, quote=True)}">{text}</a>'
+    if mode.startswith("markdown"):
+        return f"[{text}]({url})"
+    return text
+
+
+def _sender_url(sender, sender_chat):
+    """用户 → tg://user 深链；频道身份 → 频道自身链接。"""
+    if sender_chat is not None:
+        username = getattr(sender_chat, "username", None)
+        if username:
+            return f"https://t.me/{username}"
+        chat_id = str(getattr(sender_chat, "id", "") or "")
+        if chat_id.startswith("-100"):
+            return f"https://t.me/c/{chat_id[4:]}"
+        return ""
+    sender_id = getattr(sender, "id", None)
+    return f"tg://user?id={sender_id}" if sender_id else ""
+
+
 def _message_link(event, chat):
     """Build a direct Telegram link for public and private chats."""
     username = getattr(chat, "username", None)
@@ -46,19 +72,28 @@ class InfoFilter(BaseFilter):
 
             if getattr(rule, "is_monitor_compat", False):
                 mode = rule.message_mode
-                source_name = (
+
+                # 来源：有 username 就做成可点击的频道链接
+                chat_username = getattr(chat, "username", None)
+                source_title = (
                     getattr(chat, "title", None)
                     or getattr(chat, "first_name", None)
                     or getattr(getattr(rule, "source_chat", None), "name", None)
                     or str(event.chat_id)
                 )
-                if getattr(chat, "username", None):
-                    source_name = f"@{chat.username} ({source_name})"
-                source_name = _escape_for_parse_mode(source_name, mode)
-                header_lines = [f"📢 消息来源: {source_name}"]
+                # 用全角括号，避免 Markdown 解析器把半角括号转义成 \(（）
+                source_label = f"@{chat_username}（{source_title}）" if chat_username else source_title
+                source_label = _escape_for_parse_mode(source_label, mode)
+                source_display = _as_link(
+                    source_label,
+                    f"https://t.me/{chat_username}" if chat_username else "",
+                    mode,
+                )
 
-                sender_name = ""
-                sender = getattr(event.message, "sender_chat", None) or getattr(event, "sender", None)
+                # 发送者：普通用户做成 tg://user 深链，点开直达资料页
+                sender_display = ""
+                sender_chat = getattr(event.message, "sender_chat", None)
+                sender = sender_chat or getattr(event, "sender", None)
                 if sender:
                     sender_name = (
                         getattr(sender, "title", None)
@@ -67,10 +102,10 @@ class InfoFilter(BaseFilter):
                         or str(getattr(sender, "id", ""))
                     )
                     sender_name = _escape_for_parse_mode(sender_name, mode)
-                    header_lines.append(f"👤 发送者: {sender_name}")
-                context.sender_info = "\n".join(header_lines) + "\n──────────────────────────────\n"
+                    sender_display = _as_link(sender_name, _sender_url(sender, sender_chat), mode)
 
                 message_date = getattr(event.message, "date", None)
+                formatted_time = ""
                 if message_date:
                     try:
                         import pytz
@@ -78,7 +113,6 @@ class InfoFilter(BaseFilter):
                         formatted_time = message_date.astimezone(timezone).strftime("%Y-%m-%d %H:%M:%S")
                     except Exception:
                         formatted_time = message_date.strftime("%Y-%m-%d %H:%M:%S")
-                    context.time_info = f"\n🕐 时间: {formatted_time}"
 
                 message_text = getattr(event.message, "message", None) or ""
                 matched = []
@@ -91,9 +125,23 @@ class InfoFilter(BaseFilter):
                         is_match = False
                     if is_match and keyword.keyword not in matched:
                         matched.append(keyword.keyword)
+
+                # 元信息统一放到正文之后，正文在最前面
+                meta_lines = []
+                if sender_display:
+                    meta_lines.append(f"👤 {sender_display}")
+                meta_lines.append(f"📢 {source_display}")
+
+                tail = []
+                if formatted_time:
+                    tail.append(f"🕐 {formatted_time}")
                 if matched:
-                    rendered = _escape_for_parse_mode(", ".join(matched), mode)
-                    context.time_info += f"\n🔑 匹配关键词: {rendered}"
+                    tail.append(f"🔑 {_escape_for_parse_mode(', '.join(matched), mode)}")
+                if tail:
+                    meta_lines.append(" · ".join(tail))
+
+                context.sender_info = "\n\n" + "\n".join(meta_lines)
+                context.time_info = ""
 
                 if getattr(rule, "is_original_link", True):
                     try:

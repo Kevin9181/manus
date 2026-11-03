@@ -146,8 +146,8 @@ class SenderFilter(BaseFilter):
                 context.media_files.extend(files)
                 logger.info(f'已将 {len(files)} 个下载的媒体文件路径保存到context.media_files')
                 
-                # 添加发送者信息和消息文本
-                caption_text = context.sender_info + context.message_text
+                # 添加消息文本（正文在最前）
+                caption_text = context.message_text
                 
                 # 如果有超限文件，添加提示信息
                 for message, size, name in context.skipped_media:
@@ -155,8 +155,8 @@ class SenderFilter(BaseFilter):
                 
                 if context.skipped_media:
                     context.original_link = f"\n原始消息: https://t.me/c/{str(event.chat_id)[4:]}/{event.message.id}"
-                # 添加时间信息和原始链接
-                caption_text += context.time_info + context.original_link
+                # 再拼接来源/时间信息与原始链接
+                caption_text = context.compose(caption_text)
                 
                 # 作为一个组发送所有文件
                 sent_messages = await client.send_file(
@@ -206,13 +206,9 @@ class SenderFilter(BaseFilter):
             # 构建提示信息
             file_size = context.skipped_media[0][1]
             file_name = context.skipped_media[0][2]
-            original_link = f"\n原始消息: https://t.me/c/{str(event.chat_id)[4:]}/{event.message.id}"
-            
             text_to_send = context.message_text or ''
             text_to_send += f"\n\n⚠️ 媒体文件 {file_name} ({file_size}MB) 超过大小限制"
-            text_to_send = context.sender_info + text_to_send + context.time_info
-            
-            text_to_send += original_link
+            text_to_send = context.compose(text_to_send)
                 
             await client.send_message(
                 target_chat_id,
@@ -231,12 +227,7 @@ class SenderFilter(BaseFilter):
         # 发送媒体文件
         for file_path in context.media_files:
             try:
-                caption = (
-                    context.sender_info + 
-                    context.message_text + 
-                    context.time_info + 
-                    context.original_link
-                )
+                caption = context.compose()
                 
                 await client.send_file(
                     target_chat_id,
@@ -281,8 +272,8 @@ class SenderFilter(BaseFilter):
             PreviewMode.FOLLOW: context.event.message.media is not None  # 跟随原消息
         }[rule.is_preview]
         
-        # 组合消息文本
-        message_text = context.sender_info + context.message_text + context.time_info + context.original_link
+        # 组合消息文本（Monitor 兼容规则正文在前）
+        message_text = context.compose()
         
         await client.send_message(
             target_chat_id,
