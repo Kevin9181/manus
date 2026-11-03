@@ -12,8 +12,8 @@ MIN_AVAIL_MB="${MIN_AVAIL_MB:-100}"   # 可用内存低于此值告警
 MAX_DISK_PCT="${MAX_DISK_PCT:-85}"    # 根分区使用率高于此值告警
 MAX_SWAP_MB="${MAX_SWAP_MB:-400}"     # Swap 使用高于此值告警
 
-BOT_TOKEN="$(grep -m1 '^BOT_TOKEN=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d ' \r')"
-CHAT_ID="$(grep -m1 '^USER_ID=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d ' \r')"
+BOT_TOKEN="$(grep -m1 '^BOT_TOKEN=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d ' \r' || true)"
+CHAT_ID="$(grep -m1 '^USER_ID=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d ' \r' || true)"
 
 AVAIL="$(free -m | awk '/^Mem:/{print $7}')"
 DISK="$(df -P / | awk 'NR==2{gsub("%","",$5); print $5}')"
@@ -23,9 +23,9 @@ HEALTH="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}
 MSG=""
 add() { MSG="${MSG}$1"$'\n'; }
 
-[ "${AVAIL:-999}" -lt "$MIN_AVAIL_MB" ] && add "⚠️ 内存可用仅 ${AVAIL}MB"
-[ "${DISK:-0}" -gt "$MAX_DISK_PCT" ] && add "⚠️ 磁盘使用 ${DISK}%"
-[ "${SWAP:-0}" -gt "$MAX_SWAP_MB" ] && add "⚠️ Swap 已用 ${SWAP}MB"
+if [ "${AVAIL:-999}" -lt "$MIN_AVAIL_MB" ]; then add "⚠️ 内存可用仅 ${AVAIL}MB"; fi
+if [ "${DISK:-0}" -gt "$MAX_DISK_PCT" ]; then add "⚠️ 磁盘使用 ${DISK}%"; fi
+if [ "${SWAP:-0}" -gt "$MAX_SWAP_MB" ]; then add "⚠️ Swap 已用 ${SWAP}MB"; fi
 case "$HEALTH" in
   healthy|starting) ;;
   *) add "⚠️ 容器 ${CONTAINER} 状态: ${HEALTH:-不存在}" ;;
