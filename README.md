@@ -42,8 +42,8 @@
 ### 1. 一键部署（Ubuntu / Debian）
 
 ```bash
-git clone https://github.com/Kevin9181/manus.git
-cd manus
+git clone https://github.com/Kevin9181/telegram-unified-forwarder.git
+cd telegram-unified-forwarder
 sudo ./deploy.sh
 ```
 
