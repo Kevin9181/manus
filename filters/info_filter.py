@@ -38,6 +38,10 @@ def _sender_url(sender, sender_chat):
         if chat_id.startswith("-100"):
             return f"https://t.me/c/{chat_id[4:]}"
         return ""
+    # 用户：优先 https://t.me/<username>，兼容性最好；没有 username 才退回深链
+    username = getattr(sender, "username", None)
+    if username:
+        return f"https://t.me/{username}"
     sender_id = getattr(sender, "id", None)
     return f"tg://user?id={sender_id}" if sender_id else ""
 
@@ -90,8 +94,9 @@ class InfoFilter(BaseFilter):
                     mode,
                 )
 
-                # 发送者：普通用户做成 tg://user 深链，点开直达资料页
+                # 发送者：用户优先用 t.me/username（各客户端都能识别），没有 username 才退回 tg://user
                 sender_display = ""
+                sender_icon = "👤"
                 sender_chat = getattr(event.message, "sender_chat", None)
                 sender = sender_chat or getattr(event, "sender", None)
                 if sender:
@@ -103,6 +108,8 @@ class InfoFilter(BaseFilter):
                     )
                     sender_name = _escape_for_parse_mode(sender_name, mode)
                     sender_display = _as_link(sender_name, _sender_url(sender, sender_chat), mode)
+                    if sender_chat is not None:
+                        sender_icon = "📺"
 
                 message_date = getattr(event.message, "date", None)
                 formatted_time = ""
@@ -136,7 +143,7 @@ class InfoFilter(BaseFilter):
                 # 元信息统一放到正文之后，正文在最前面
                 meta_lines = []
                 if sender_display:
-                    meta_lines.append(f"👤 {sender_display}")
+                    meta_lines.append(f"{sender_icon} {sender_display}")
                 meta_lines.append(f"📢 {source_display}")
 
                 tail = []
