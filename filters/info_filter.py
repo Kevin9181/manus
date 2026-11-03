@@ -126,6 +126,13 @@ class InfoFilter(BaseFilter):
                     if is_match and keyword.keyword not in matched:
                         matched.append(keyword.keyword)
 
+                # HTML 模式下把正文包进引用块，和下面的元信息在视觉上分开。
+                # 必须先转义：正文里的 <、> 会被当成标签导致发送失败。
+                if context.message_text and str(getattr(mode, "value", mode)).lower() == "html":
+                    context.message_text = (
+                        '<blockquote>' + html.escape(context.message_text, quote=False) + '</blockquote>'
+                    )
+
                 # 元信息统一放到正文之后，正文在最前面
                 meta_lines = []
                 if sender_display:
