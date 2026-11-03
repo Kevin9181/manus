@@ -1,34 +1,36 @@
-FROM python:3.11-slim
+# ---- 构建阶段：编译工具链和 Python 依赖只存在于这一层 ----
+FROM python:3.11-slim AS builder
 
-# 设置工作目录
-WORKDIR /app
+WORKDIR /build
 
-# 设置Docker日志配置
-ENV DOCKER_LOG_MAX_SIZE=10m
-ENV DOCKER_LOG_MAX_FILE=3
-
-# 安装系统依赖
-RUN apt-get update && apt-get install -y \
-    tzdata \
-    && ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
-    && dpkg-reconfigure -f noninteractive tzdata \
-    && apt-get install -y \
-    gcc \
-    python3-dev \
+# gcc / python3-dev 仅用于编译依赖，不会进入最终镜像
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc \
+        python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# 复制依赖文件并安装
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-# 创建临时文件目录
-RUN mkdir -p /app/temp
 
-# 复制应用代码
+# ---- 运行阶段：只保留运行期需要的东西 ----
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# 时区数据是运行期需要的
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        tzdata \
+    && ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /install /usr/local
 COPY . .
 
-# 设置环境变量
-ENV PYTHONUNBUFFERED=1
+RUN mkdir -p /app/temp
 
-# 启动命令
+ENV PYTHONUNBUFFERED=1 \
+    DOCKER_LOG_MAX_SIZE=10m \
+    DOCKER_LOG_MAX_FILE=3
+
 CMD ["python", "main.py"]
