@@ -36,3 +36,8 @@ handlers/bot_handler copy.py
 
 /logs
 logs/telegram_forwarder.log
+
+# 运行数据与本地备份，禁止提交（含聊天ID/会话等敏感内容）
+/db/
+*.bak
+*.bak-*
