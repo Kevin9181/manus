@@ -165,10 +165,11 @@ def _read_monitor_admins():
 
 
 async def _resolve_chat_label(client, session, telegram_id):
-    """把 Telegram ID 解析成 (名称, 链接)；解析不到就退回数据库里的名字。"""
+    """把 Telegram ID 解析成 (名称, 链接, 是否解析到实体)。"""
     value = str(telegram_id).strip()
     name = None
     username = None
+    entity = None
     is_user = None
 
     if client is not None:
@@ -182,7 +183,7 @@ async def _resolve_chat_label(client, session, telegram_id):
                 or username
             )
         except Exception:
-            pass
+            entity = None
 
     chat_row = session.query(Chat).filter(Chat.telegram_chat_id == value).first()
     if not name:
@@ -199,25 +200,30 @@ async def _resolve_chat_label(client, session, telegram_id):
     else:
         url = f"https://t.me/{username}" if username else f"https://t.me/c/{internal}"
 
-    return name, url
+    return name, url, entity is not None
 
 
 async def _format_chat_list(client, session, ids):
     """把一组 ID 渲染成带序号和超链的多行文本。"""
     if not ids:
         return "（无）"
+
     # 并发解析，20 个来源串行会有好几秒延迟
-    resolved = await asyncio.gather(
+    results = await asyncio.gather(
         *[_resolve_chat_label(client, session, telegram_id) for telegram_id in ids],
         return_exceptions=True,
     )
+
     lines = []
-    for index, (telegram_id, item) in enumerate(zip(ids, resolved), 1):
+    for index, (telegram_id, item) in enumerate(zip(ids, results), 1):
         if isinstance(item, Exception):
-            name, url = str(telegram_id), ""
+            name, url, found = str(telegram_id), "", False
         else:
-            name, url = item
+            name, url, found = item
         label = html.escape(name, quote=False)
+        if not found:
+            # 解析不到实体的，附上原始 ID，避免同名条目分不清
+            label = f"{label} · {html.escape(str(telegram_id), quote=False)}"
         if url:
             lines.append(f'{index}. <a href="{url}">{label}</a>')
         else:
