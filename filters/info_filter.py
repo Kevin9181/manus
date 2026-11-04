@@ -38,10 +38,8 @@ def _sender_url(sender, sender_chat):
         if chat_id.startswith("-100"):
             return f"https://t.me/c/{chat_id[4:]}"
         return ""
-    # 用户：优先 https://t.me/<username>，兼容性最好；没有 username 才退回深链
-    username = getattr(sender, "username", None)
-    if username:
-        return f"https://t.me/{username}"
+    # 用户：一律用 tg://user?id=<数字ID>。
+    # 用户名可能被修改，t.me/<username> 会随之失效；数字 ID 永久不变。
     sender_id = getattr(sender, "id", None)
     return f"tg://user?id={sender_id}" if sender_id else ""
 
