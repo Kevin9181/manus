@@ -5,6 +5,7 @@ from enums.enums import HandleMode, PreviewMode
 from utils.common import get_main_module
 from telethon.tl.types import Channel
 import traceback
+from utils.rich_text import edit_message as edit_rich_message
 
 logger = logging.getLogger(__name__)
 
@@ -90,11 +91,12 @@ class EditFilter(BaseFilter):
                         text_to_edit = message_text if message.id == event.message.id else ""
                         logger.debug(f"尝试编辑媒体组消息 {message.id}, 媒体类型: {type(message.media).__name__ if message.media else '无媒体'}")
                         
-                        await user_client.edit_message(
+                        await edit_rich_message(
+                            user_client,
                             event.chat_id,
                             message.id,
-                            text=text_to_edit,
-                            parse_mode=rule.message_mode.value,
+                            text_to_edit,
+                            rule.message_mode,
                             link_preview=link_preview
                         )
                         logger.info(f"成功编辑媒体组消息 {message.id}")
@@ -112,11 +114,12 @@ class EditFilter(BaseFilter):
                     logger.debug(f"尝试编辑单条消息 {event.message.id}, 消息类型: {type(event.message).__name__}, 媒体类型: {type(event.message.media).__name__ if event.message.media else '无媒体'}")
                     logger.debug(f"使用解析模式: {rule.message_mode.value}")
                     
-                    await user_client.edit_message(
+                    await edit_rich_message(
+                        user_client,
                         event.chat_id,
                         event.message.id,
-                        text=message_text,
-                        parse_mode=rule.message_mode.value,
+                        message_text,
+                        rule.message_mode,
                         link_preview=link_preview
                     )
                     logger.info(f"成功编辑消息 {event.message.id}")

@@ -159,7 +159,8 @@ class SenderFilter(BaseFilter):
                 caption_text = context.compose(caption_text)
                 
                 # 作为一个组发送所有文件
-                sent_messages = await client.send_file(
+                sent_messages = await send_rich_file(
+                    client,
                     target_chat_id,
                     files,
                     caption=caption_text,
@@ -210,10 +211,11 @@ class SenderFilter(BaseFilter):
             text_to_send += f"\n\n⚠️ 媒体文件 {file_name} ({file_size}MB) 超过大小限制"
             text_to_send = context.compose(text_to_send)
                 
-            await client.send_message(
+            await send_rich_message(
+                client,
                 target_chat_id,
                 text_to_send,
-                parse_mode=parse_mode,
+                parse_mode,
                 link_preview=True,
                 buttons=context.buttons
             )
@@ -229,7 +231,8 @@ class SenderFilter(BaseFilter):
             try:
                 caption = context.compose()
                 
-                await client.send_file(
+                await send_rich_file(
+                    client,
                     target_chat_id,
                     file_path,
                     caption=caption,
@@ -275,10 +278,11 @@ class SenderFilter(BaseFilter):
         # 组合消息文本（Monitor 兼容规则正文在前）
         message_text = context.compose()
         
-        await client.send_message(
+        await send_rich_message(
+            client,
             target_chat_id,
-            str(message_text),
-            parse_mode=parse_mode,
+            message_text,
+            parse_mode,
             link_preview=link_preview,
             buttons=context.buttons
         )
